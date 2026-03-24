@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import jsQR from 'jsqr'
 
 function Home({
   user,
@@ -8,8 +9,12 @@ function Home({
   const [balanceVisible, setBalanceVisible] = useState(true)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState('')
+  const [scannedRaw, setScannedRaw] = useState('')
+  const [scannedJson, setScannedJson] = useState(null)
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const streamRef = useRef(null)
+  const scanFrameRef = useRef(0)
 
   const transactions = [
     {
@@ -44,6 +49,8 @@ function Home({
 
   const openScanner = async () => {
     setScannerError('')
+    setScannedRaw('')
+    setScannedJson(null)
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError('Camera access is not supported on this device')
@@ -64,15 +71,64 @@ function Home({
     }
   }
 
-  const closeScanner = () => {
+  const stopScannerStream = useCallback(() => {
+    if (scanFrameRef.current) {
+      window.cancelAnimationFrame(scanFrameRef.current)
+      scanFrameRef.current = 0
+    }
+
     if (streamRef.current) {
       for (const track of streamRef.current.getTracks()) {
         track.stop()
       }
       streamRef.current = null
     }
+  }, [])
+
+  const closeScanner = () => {
+    stopScannerStream()
     setScannerOpen(false)
   }
+
+  const startDecodeLoop = useCallback(() => {
+    const scanFrame = () => {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+
+      if (!scannerOpen || !video || !canvas || !streamRef.current) {
+        return
+      }
+
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (context) {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+          const result = jsQR(imageData.data, imageData.width, imageData.height)
+
+          if (result?.data) {
+            setScannedRaw(result.data)
+            try {
+              setScannedJson(JSON.parse(result.data))
+              setScannerError('')
+            } catch {
+              setScannedJson(null)
+            }
+
+            stopScannerStream()
+            return
+          }
+        }
+      }
+
+      scanFrameRef.current = window.requestAnimationFrame(scanFrame)
+    }
+
+    scanFrameRef.current = window.requestAnimationFrame(scanFrame)
+  }, [scannerOpen, stopScannerStream])
 
   useEffect(() => {
     if (!scannerOpen || !videoRef.current || !streamRef.current) {
@@ -82,18 +138,15 @@ function Home({
     videoRef.current.srcObject = streamRef.current
     videoRef.current
       .play()
+      .then(() => startDecodeLoop())
       .catch(() => setScannerError('Unable to start camera preview'))
-  }, [scannerOpen])
+  }, [scannerOpen, startDecodeLoop])
 
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        for (const track of streamRef.current.getTracks()) {
-          track.stop()
-        }
-      }
+      stopScannerStream()
     }
-  }, [])
+  }, [stopScannerStream])
 
   return (
     <section className="page home-page margin-bottom=large">
@@ -136,9 +189,25 @@ function Home({
           ) : (
             <div className="scanner-frame">
               <video ref={videoRef} className="scanner-video" playsInline muted />
+              <canvas ref={canvasRef} className="scanner-canvas-hidden" aria-hidden="true" />
             </div>
           )}
-          <p className="muted">Point your camera at a QR code to scan.</p>
+
+          {!scannedRaw && <p className="muted">Point your camera at a QR code to scan.</p>}
+
+          {scannedRaw && (
+            <article className="scan-result">
+              <p className="scan-result-title">Scan result</p>
+              {scannedJson ? (
+                <pre className="scan-result-pre">{JSON.stringify(scannedJson, null, 2)}</pre>
+              ) : (
+                <pre className="scan-result-pre">{scannedRaw}</pre>
+              )}
+              <button type="button" className="action-btn action-secondary" onClick={openScanner}>
+                Scan Again
+              </button>
+            </article>
+          )}
         </section>
       )}
 

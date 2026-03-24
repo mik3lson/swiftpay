@@ -16,11 +16,13 @@ function App() {
     step: 'input',
     amount: '',
   })
+  const [requestNfcSupported, setRequestNfcSupported] = useState(false)
   const [sendMoneyFlow, setSendMoneyFlow] = useState({
     open: false,
     step: 'scanning',
     scannedDetails: null,
   })
+  const [sendMoneyNfcSupported, setSendMoneyNfcSupported] = useState(false)
   const [profile, setProfile] = useState(() => {
     try {
       const saved = window.localStorage.getItem('swiftpay_profile')
@@ -82,6 +84,7 @@ function App() {
   }
 
   const openRequestPage = () => {
+    setRequestNfcSupported(supported)
     setRequestFlow({
       open: true,
       step: 'input',
@@ -90,11 +93,26 @@ function App() {
   }
 
   const closeRequestPage = () => {
+    setRequestNfcSupported(supported)
     setRequestFlow({
       open: false,
       step: 'input',
       amount: '',
     })
+  }
+
+  const isNfcUnavailableError = (transferError) => {
+    const message = transferError?.message?.toLowerCase() || ''
+    const name = transferError?.name?.toLowerCase() || ''
+
+    return (
+      message.includes('not supported')
+      || message.includes('ndefreader')
+      || message.includes('nfc')
+      || name.includes('notsupportederror')
+      || name.includes('notallowederror')
+      || name.includes('securityerror')
+    )
   }
 
   const buildRequestPayload = (amount) => ({
@@ -114,7 +132,14 @@ function App() {
       await shareBankDetails(buildRequestPayload(amount))
       pushToast('NFC connection successful. Request details sent.', 'success')
       setRequestFlow((current) => ({ ...current, step: 'done' }))
-    } catch {
+    } catch (transferError) {
+      if (isNfcUnavailableError(transferError)) {
+        setRequestNfcSupported(false)
+        setRequestFlow((current) => ({ ...current, step: 'input' }))
+        pushToast('NFC unavailable on this device. Use QR request instead.', 'info')
+        return
+      }
+
       pushToast('Could not send request via NFC', 'error')
       setRequestFlow((current) => ({ ...current, step: 'input' }))
     }
@@ -142,15 +167,20 @@ function App() {
   }
 
   const openSendMoneyPage = () => {
+    setSendMoneyNfcSupported(supported)
     setSendMoneyFlow({
       open: true,
       step: 'scanning',
       scannedDetails: null,
     })
-    scanForSendMoney()
+
+    if (supported) {
+      scanForSendMoney()
+    }
   }
 
   const closeSendMoneyPage = () => {
+    setSendMoneyNfcSupported(supported)
     setSendMoneyFlow({
       open: false,
       step: 'scanning',
@@ -159,12 +189,16 @@ function App() {
   }
 
   const rescanSendMoney = () => {
+    setSendMoneyNfcSupported(supported)
     setSendMoneyFlow({
       open: true,
       step: 'scanning',
       scannedDetails: null,
     })
-    scanForSendMoney()
+
+    if (supported) {
+      scanForSendMoney()
+    }
   }
 
   const scanForSendMoney = async () => {
@@ -186,7 +220,17 @@ function App() {
         scannedDetails: details,
       }))
       pushToast('NFC connection successful. Payment details received.', 'success')
-    } catch {
+    } catch (scanError) {
+      if (isNfcUnavailableError(scanError)) {
+        setSendMoneyNfcSupported(false)
+        setSendMoneyFlow((current) => ({
+          ...current,
+          step: 'scanning',
+        }))
+        pushToast('NFC unavailable on this device. Use QR scan instead.', 'info')
+        return
+      }
+
       pushToast('Could not read payment details from device', 'error')
       setSendMoneyFlow((current) => ({
         ...current,
@@ -251,7 +295,7 @@ function App() {
         <RequestPage
           step={requestFlow.step}
           amount={requestFlow.amount}
-          supported={supported}
+          supported={requestNfcSupported}
           requestDetails={{
             bankName: profile.bankName,
             accountNumber: profile.accountNumber,
@@ -270,7 +314,7 @@ function App() {
         <SendMoneyPage
           step={sendMoneyFlow.step}
           scannedDetails={sendMoneyFlow.scannedDetails}
-          supported={supported}
+          supported={sendMoneyNfcSupported}
           onBack={closeSendMoneyPage}
           onRescan={rescanSendMoney}
           onPaymentMethodSelect={completePayment}
