@@ -1,0 +1,225 @@
+import { useEffect, useRef, useState } from 'react'
+
+function Home({
+  user,
+  onOpenRequest,
+  onOpenSendMoney,
+}) {
+  const [balanceVisible, setBalanceVisible] = useState(true)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState('')
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+
+  const transactions = [
+    {
+      id: 'txn-001',
+      title: 'Wallet Funding',
+      date: 'Today, 09:42 AM',
+      amount: '+₦12,500',
+      type: 'credit',
+    },
+    {
+      id: 'txn-002',
+      title: 'Airtime Purchase',
+      date: 'Today, 08:15 AM',
+      amount: '-₦1,000',
+      type: 'debit',
+    },
+    {
+      id: 'txn-003',
+      title: 'Transfer Received',
+      date: 'Yesterday, 06:30 PM',
+      amount: '+₦4,250',
+      type: 'credit',
+    },
+    {
+      id: 'txn-004',
+      title: 'Food Delivery',
+      date: 'Yesterday, 02:11 PM',
+      amount: '-₦3,400',
+      type: 'debit',
+    },
+  ]
+
+  const openScanner = async () => {
+    setScannerError('')
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerError('Camera access is not supported on this device')
+      setScannerOpen(true)
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      })
+      streamRef.current = stream
+      setScannerOpen(true)
+    } catch {
+      setScannerError('Unable to access camera. Please allow permission and try again.')
+      setScannerOpen(true)
+    }
+  }
+
+  const closeScanner = () => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop()
+      }
+      streamRef.current = null
+    }
+    setScannerOpen(false)
+  }
+
+  useEffect(() => {
+    if (!scannerOpen || !videoRef.current || !streamRef.current) {
+      return
+    }
+
+    videoRef.current.srcObject = streamRef.current
+    videoRef.current
+      .play()
+      .catch(() => setScannerError('Unable to start camera preview'))
+  }, [scannerOpen])
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        for (const track of streamRef.current.getTracks()) {
+          track.stop()
+        }
+      }
+    }
+  }, [])
+
+  return (
+    <section className="page home-page margin-bottom=large">
+      <header className="app-header reveal">
+        <div className="brand-row">
+          <button
+            type="button"
+            className="scan-trigger"
+            aria-label="Open scanner"
+            onClick={openScanner}
+          >
+            <svg
+              fill="#ffffff"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+              className="scan-icon"
+            >
+              <path d="M4,4h6v6H4V4M20,4v6H14V4h6M14,15h2V13H14V11h2v2h2V11h2v2H18v2h2v3H18v2H16V18H13v2H11V16h3V15m2,0v3h2V15H16M4,20V14h6v6H4M6,6V8H8V6H6M16,6V8h2V6H16M6,16v2H8V16H6M4,11H6v2H4V11m5,0h4v4H11V13H9V11m2-5h2v4H11V6M2,2V6H0V2A2,2,0,0,1,2,0H6V2H2M22,0a2,2,0,0,1,2,2V6H22V2H18V0h4M2,18v4H6v2H2a2,2,0,0,1-2-2V18H2m20,4V18h2v4a2,2,0,0,1-2,2H18V22Z" />
+            </svg>
+          </button>
+          <div className="brand-title">swift Pay</div>
+          <span className="brand-spacer" aria-hidden="true" />
+        </div>
+        <div className="brand-subtitle">tap & pay</div>
+       {/*
+          <div className="header-username">@{user.username}</div>
+        {*/}
+      </header>
+
+      {scannerOpen && (
+        <section className="scanner-sheet glass-card reveal delay-1" aria-label="Camera scanner">
+          <div className="scanner-sheet-header">
+            <h3>Scan</h3>
+            <button type="button" className="request-back" onClick={closeScanner}>
+              Close
+            </button>
+          </div>
+          {scannerError ? (
+            <p className="unsupported">{scannerError}</p>
+          ) : (
+            <div className="scanner-frame">
+              <video ref={videoRef} className="scanner-video" playsInline muted />
+            </div>
+          )}
+          <p className="muted">Point your camera at a QR code to scan.</p>
+        </section>
+      )}
+
+      <article className="balance-card glass-card reveal delay-1 margin-top" aria-label="Account balance">
+        <p className="label">Account balance</p>
+        <div className="balance-display">
+          <h2>{balanceVisible ? '₦0.00' : '••••'}</h2>
+          <button
+            type="button"
+            className="eye-toggle"
+            onClick={() => setBalanceVisible(!balanceVisible)}
+            aria-label={balanceVisible ? 'Hide balance' : 'Show balance'}
+          >
+            {balanceVisible ? (
+              <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="eye-icon">
+                <path d="M8 2C4.5 2 1.5 4.5 0 8c1.5 3.5 4.5 6 8 6s6.5-2.5 8-6c-1.5-3.5-4.5-6-8-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6.5c-1.38 0-2.5 1.12-2.5 2.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5-1.12-2.5-2.5-2.5z" fill="currentColor" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="eye-icon">
+                <path fillRule="evenodd" clipRule="evenodd" d="M16 16H13L10.8368 13.3376C9.96488 13.7682 8.99592 14 8 14C6.09909 14 4.29638 13.1557 3.07945 11.6953L0 8L3.07945 4.30466C3.14989 4.22013 3.22229 4.13767 3.29656 4.05731L0 0H3L16 16ZM5.35254 6.58774C5.12755 7.00862 5 7.48941 5 8C5 9.65685 6.34315 11 8 11C8.29178 11 8.57383 10.9583 8.84053 10.8807L5.35254 6.58774Z" fill="currentColor" />
+                <path d="M16 8L14.2278 10.1266L7.63351 2.01048C7.75518 2.00351 7.87739 2 8 2C9.90091 2 11.7036 2.84434 12.9206 4.30466L16 8Z" fill="currentColor" />
+              </svg>
+            )}
+          </button>
+        </div>
+        <div className="balance-row">
+          <span>Ledger balance</span>
+          <strong>{balanceVisible ? '₦0.00' : '•••'}</strong>
+        </div>
+        <div className="account-meta">
+          <p>
+            user ID: <span>@{user.username}</span>
+          </p>
+        
+        </div>
+      </article>
+
+      <section className="actions-grid reveal delay-2" aria-label="Primary actions">
+        <button type="button" className="action-btn action-secondary" onClick={onOpenRequest}>
+          Request
+        </button>
+        <button type="button" className="action-btn action-secondary" onClick={onOpenSendMoney}>
+          Send Money
+        </button>
+      </section>
+  {/*
+      <section className="quick-actions glass-card reveal delay-3">
+        <button type="button" className="quick-btn">
+          Bills & Apps
+        </button>
+        <button type="button" className="quick-btn">
+          View Requests
+        </button>
+      </section>
+  */}
+      <section className="transactions-panel glass-card reveal delay-3">
+        <div className="transactions-heading">
+          <h3>Transactions</h3>
+          <p className="transactions-caption">Recent activity</p>
+        </div>
+
+        <div className="transactions-list">
+          {transactions.map((transaction) => (
+            <article key={transaction.id} className="transaction-item">
+              <div className="transaction-info">
+                <p className="transaction-title">{transaction.title}</p>
+                <p className="transaction-date">{transaction.date}</p>
+              </div>
+              <p
+                className={`transaction-amount ${
+                  transaction.type === 'credit' ? 'transaction-credit' : 'transaction-debit'
+                }`}
+              >
+                {transaction.amount}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
+  )
+}
+
+export default Home
