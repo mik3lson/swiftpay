@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import jsQR from 'jsqr'
 
 function SendMoneyPage({
   step,
@@ -9,13 +10,33 @@ function SendMoneyPage({
   onPaymentMethodSelect,
 }) {
   const [fallbackStep, setFallbackStep] = useState('prompt')
+  const [fallbackScannedDetails, setFallbackScannedDetails] = useState(null)
+  const [fallbackScannedRaw, setFallbackScannedRaw] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState('')
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const streamRef = useRef(null)
+  const scanFrameRef = useRef(0)
+
+  const stopScannerStream = useCallback(() => {
+    if (scanFrameRef.current) {
+      window.cancelAnimationFrame(scanFrameRef.current)
+      scanFrameRef.current = 0
+    }
+
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop()
+      }
+      streamRef.current = null
+    }
+  }, [])
 
   const openScanner = async () => {
     setScannerError('')
+    setFallbackScannedRaw('')
+    setFallbackScannedDetails(null)
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError('Camera access is not supported on this device')
@@ -37,13 +58,68 @@ function SendMoneyPage({
   }
 
   const closeScanner = () => {
-    if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) {
-        track.stop()
-      }
-      streamRef.current = null
-    }
+    stopScannerStream()
     setScannerOpen(false)
+  }
+
+  const startDecodeLoop = useCallback(() => {
+    const scanFrame = () => {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+
+      if (!scannerOpen || !video || !canvas || !streamRef.current) {
+        return
+      }
+
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (context) {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+          const result = jsQR(imageData.data, imageData.width, imageData.height)
+
+          if (result?.data) {
+            setFallbackScannedRaw(result.data)
+
+            try {
+              const parsed = JSON.parse(result.data)
+              setFallbackScannedDetails(parsed)
+              setFallbackStep('scanned')
+              setScannerError('')
+            } catch {
+              setFallbackScannedDetails(null)
+              setScannerError('Scanned QR payload is not valid JSON')
+            }
+
+            stopScannerStream()
+            setScannerOpen(false)
+            return
+          }
+        }
+      }
+
+      scanFrameRef.current = window.requestAnimationFrame(scanFrame)
+    }
+
+    scanFrameRef.current = window.requestAnimationFrame(scanFrame)
+  }, [scannerOpen, stopScannerStream])
+
+  const resetFallbackScanner = () => {
+    setFallbackStep('camera')
+    setFallbackScannedRaw('')
+    setFallbackScannedDetails(null)
+    setScannerError('')
+  }
+
+  const continueFallbackPayment = () => {
+    setFallbackStep('payment-method')
+  }
+
+  const completeFallbackPayment = () => {
+    setFallbackStep('success')
   }
 
   useEffect(() => {
@@ -54,18 +130,15 @@ function SendMoneyPage({
     videoRef.current.srcObject = streamRef.current
     videoRef.current
       .play()
+      .then(() => startDecodeLoop())
       .catch(() => setScannerError('Unable to start camera preview'))
-  }, [scannerOpen])
+  }, [scannerOpen, startDecodeLoop])
 
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        for (const track of streamRef.current.getTracks()) {
-          track.stop()
-        }
-      }
+      stopScannerStream()
     }
-  }, [])
+  }, [stopScannerStream])
 
   return (
     <section className="page send-money-page">
@@ -103,6 +176,7 @@ function SendMoneyPage({
           ) : (
             <div className="scanner-frame">
               <video ref={videoRef} className="scanner-video" playsInline muted />
+              <canvas ref={canvasRef} className="scanner-canvas-hidden" aria-hidden="true" />
             </div>
           )}
           <p className="muted">Point your camera at a QR code to scan.</p>
@@ -124,6 +198,117 @@ function SendMoneyPage({
             onClick={() => setFallbackStep('prompt')}
           >
             Back
+          </button>
+        </article>
+      )}
+
+      {!supported && fallbackStep === 'scanned' && (
+        <article className="request-card glass-card reveal delay-1">
+          <h2>Payment Details</h2>
+
+          {fallbackScannedDetails ? (
+            <div className="payment-details">
+              <div className="detail-field">
+                <label className="detail-label">Account Name</label>
+                <p className="detail-value">{fallbackScannedDetails.accountName || 'N/A'}</p>
+              </div>
+              <div className="detail-field">
+                <label className="detail-label">Account Number</label>
+                <p className="detail-value">{fallbackScannedDetails.accountNumber || 'N/A'}</p>
+              </div>
+              <div className="detail-field">
+                <label className="detail-label">Bank</label>
+                <p className="detail-value">{fallbackScannedDetails.bankName || 'N/A'}</p>
+              </div>
+              {fallbackScannedDetails.amount && (
+                <div className="detail-field">
+                  <label className="detail-label">Amount</label>
+                  <p className="detail-value amount">₦{fallbackScannedDetails.amount}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <article className="scan-result">
+              <p className="scan-result-title">Scan result</p>
+              <pre className="scan-result-pre">{fallbackScannedRaw || 'No QR payload found.'}</pre>
+            </article>
+          )}
+
+          {fallbackScannedDetails && (
+            <button type="button" className="action-btn action-primary" onClick={continueFallbackPayment}>
+              Continue to Payment
+            </button>
+          )}
+          <button type="button" className="action-btn action-secondary" onClick={resetFallbackScanner}>
+            Scan Again
+          </button>
+        </article>
+      )}
+
+      {!supported && fallbackStep === 'payment-method' && fallbackScannedDetails && (
+        <article className="request-card glass-card reveal delay-1">
+          <h2>Choose Payment Method</h2>
+          <div className="payment-details">
+            <p className="detail-field">
+              <span className="detail-label">Paying to:</span>
+              <span className="detail-value">{fallbackScannedDetails.accountName || 'N/A'}</span>
+            </p>
+            <p className="detail-field amount-preview">
+              Amount: <strong>₦{fallbackScannedDetails.amount || '0.00'}</strong>
+            </p>
+          </div>
+
+          <div className="payment-methods">
+            <button
+              type="button"
+              className="payment-method-btn"
+              onClick={completeFallbackPayment}
+            >
+              <span className="method-icon">💳</span>
+              <span className="method-name">Pay With Bank Card</span>
+            </button>
+            <button
+              type="button"
+              className="payment-method-btn"
+              onClick={completeFallbackPayment}
+            >
+              <span className="method-icon">⚡</span>
+              <span className="method-name">Pay With Swift Money</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="action-btn action-secondary"
+            onClick={resetFallbackScanner}
+          >
+            Cancel
+          </button>
+        </article>
+      )}
+
+      {!supported && fallbackStep === 'success' && fallbackScannedDetails && (
+        <article className="request-card glass-card reveal delay-1">
+          <div className="success-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+              <path
+                d="M7 12.5L10 15.5L17 8.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h2>Money Sent!</h2>
+          <div className="success-details">
+            <p className="muted">Successfully sent to</p>
+            <p className="recipient-name">{fallbackScannedDetails.accountName || 'Recipient'}</p>
+            <p className="sent-amount">₦{fallbackScannedDetails.amount || '0.00'}</p>
+          </div>
+          <button type="button" className="action-btn action-primary" onClick={onBack}>
+            Back To Home
           </button>
         </article>
       )}
