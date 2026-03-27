@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import jsQR from 'jsqr'
+import * as api from '../services/api'
 
 function SendMoneyPage({
   step,
@@ -8,12 +9,24 @@ function SendMoneyPage({
   onBack,
   onRescan,
   onPaymentMethodSelect,
+  user,
+  profile,
+  onTransferSuccess,
 }) {
   const [fallbackStep, setFallbackStep] = useState('prompt')
   const [fallbackScannedDetails, setFallbackScannedDetails] = useState(null)
   const [fallbackScannedRaw, setFallbackScannedRaw] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState('')
+  const [cardData, setCardData] = useState({
+    cardNumber: '',
+    expiryDate: '',
+    cvv: '',
+    pin: '',
+  })
+  const [paymentProcessing, setPaymentProcessing] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const [transferResponse, setTransferResponse] = useState(null)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
@@ -118,8 +131,60 @@ function SendMoneyPage({
     setFallbackStep('payment-method')
   }
 
-  const completeFallbackPayment = () => {
-    setFallbackStep('success')
+  const handleCardInputChange = (e) => {
+    const { name, value } = e.target
+    setCardData((current) => ({ ...current, [name]: value }))
+  }
+
+  const initiateCardPayment = async () => {
+    if (!cardData.cardNumber || !cardData.expiryDate || !cardData.cvv || !cardData.pin) {
+      setPaymentError('Please enter all card details')
+      return
+    }
+
+    if (!fallbackScannedDetails || !user?.id) {
+      setPaymentError('Missing payment details')
+      return
+    }
+
+    setPaymentProcessing(true)
+    setPaymentError('')
+
+    try {
+      const payload = {
+        sender_id: Number(user.id),
+        receiver_id: fallbackScannedDetails.userId ? Number(fallbackScannedDetails.userId) : 1,
+        receiver_account_number: fallbackScannedDetails.accountNumber,
+        receiver_bank_code: '000',
+        receiver_account_name: fallbackScannedDetails.accountName,
+        amount_kobo: Math.round(Number(fallbackScannedDetails.amount) * 100),
+        currency: 'NGN',
+        card_pan: cardData.cardNumber.replace(/\s/g, ''),
+        card_pin: cardData.pin,
+        card_expiry: cardData.expiryDate.replace('/', ''),
+        card_cvv2: cardData.cvv,
+      }
+
+      const response = await api.initiateTransfer(payload)
+      setTransferResponse(response)
+      setFallbackStep('success')
+      setPaymentProcessing(false)
+
+      if (onTransferSuccess) {
+        onTransferSuccess(response)
+      }
+    } catch (error) {
+      setPaymentError(error.message || 'Payment failed. Please try again.')
+      setPaymentProcessing(false)
+    }
+  }
+
+  const completeFallbackPayment = (method) => {
+    if (method === 'bank-card') {
+      setFallbackStep('payment-card-form')
+    } else if (method === 'swift-money') {
+      setFallbackStep('success')
+    }
   }
 
   useEffect(() => {
@@ -262,7 +327,8 @@ function SendMoneyPage({
             <button
               type="button"
               className="payment-method-btn"
-              onClick={completeFallbackPayment}
+              onClick={() => completeFallbackPayment('bank-card')}
+              disabled={paymentProcessing}
             >
               <span className="method-icon">💳</span>
               <span className="method-name">Pay With Bank Card</span>
@@ -270,7 +336,8 @@ function SendMoneyPage({
             <button
               type="button"
               className="payment-method-btn"
-              onClick={completeFallbackPayment}
+              onClick={() => completeFallbackPayment('swift-money')}
+              disabled={paymentProcessing}
             >
               <span className="method-icon">⚡</span>
               <span className="method-name">Pay With Swift Money</span>
@@ -283,6 +350,105 @@ function SendMoneyPage({
             onClick={resetFallbackScanner}
           >
             Cancel
+          </button>
+        </article>
+      )}
+
+      {!supported && fallbackStep === 'payment-card-form' && fallbackScannedDetails && (
+        <article className="request-card glass-card reveal delay-1">
+          <h2>Card Payment</h2>
+          <div className="payment-details">
+            <p className="detail-field">
+              <span className="detail-label">Paying to:</span>
+              <span className="detail-value">{fallbackScannedDetails.accountName || 'N/A'}</span>
+            </p>
+            <p className="detail-field amount-preview">
+              Amount: <strong>₦{fallbackScannedDetails.amount || '0.00'}</strong>
+            </p>
+          </div>
+
+          {paymentError && (
+            <p style={{ color: '#ff9dac', fontSize: '14px', marginBottom: '12px' }}>
+              {paymentError}
+            </p>
+          )}
+
+          <form
+            style={{ display: 'grid', gap: '12px' }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              initiateCardPayment()
+            }}
+          >
+            <label style={{ display: 'grid', gap: '6px', fontSize: '13px', color: '#c7b8e5' }}>
+              Card Number
+              <input
+                type="text"
+                name="cardNumber"
+                value={cardData.cardNumber}
+                onChange={handleCardInputChange}
+                placeholder="1234 5678 9012 3456"
+                maxLength="19"
+                required
+              />
+            </label>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <label style={{ display: 'grid', gap: '6px', fontSize: '13px', color: '#c7b8e5' }}>
+                Expiry (MM/YY)
+                <input
+                  type="text"
+                  name="expiryDate"
+                  value={cardData.expiryDate}
+                  onChange={handleCardInputChange}
+                  placeholder="12/25"
+                  maxLength="5"
+                  required
+                />
+              </label>
+              <label style={{ display: 'grid', gap: '6px', fontSize: '13px', color: '#c7b8e5' }}>
+                CVV
+                <input
+                  type="text"
+                  name="cvv"
+                  value={cardData.cvv}
+                  onChange={handleCardInputChange}
+                  placeholder="123"
+                  maxLength="4"
+                  required
+                />
+              </label>
+            </div>
+
+            <label style={{ display: 'grid', gap: '6px', fontSize: '13px', color: '#c7b8e5' }}>
+              PIN
+              <input
+                type="password"
+                name="pin"
+                value={cardData.pin}
+                onChange={handleCardInputChange}
+                placeholder="••••"
+                maxLength="4"
+                required
+              />
+            </label>
+
+            <button
+              type="submit"
+              className="action-btn action-primary"
+              disabled={paymentProcessing}
+            >
+              {paymentProcessing ? 'Processing...' : 'Pay Now'}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="action-btn action-secondary"
+            onClick={() => setFallbackStep('payment-method')}
+            disabled={paymentProcessing}
+          >
+            Back
           </button>
         </article>
       )}

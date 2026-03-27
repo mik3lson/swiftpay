@@ -594,6 +594,12 @@ function App() {
           onBack={closeSendMoneyPage}
           onRescan={rescanSendMoney}
           onPaymentMethodSelect={completePayment}
+          user={user}
+          profile={profile}
+          onTransferSuccess={(response) => {
+            pushToast('Transfer initiated successfully', 'success')
+            closeSendMoneyPage()
+          }}
         />
       )
     }
@@ -601,7 +607,6 @@ function App() {
     return (
       <Home
         user={user}
-        usersCount={users.length}
         onOpenRequest={openRequestPage}
         onOpenSendMoney={openSendMoneyPage}
         onNavigateToProfile={() => setActiveTab('profile')}

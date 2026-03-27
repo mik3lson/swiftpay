@@ -157,13 +157,27 @@ export const getUsers = (token) =>
   requestWithFallback('/users/', 'GET', null, token)
 
 export const enterBankDetails = (bankData, userId, token) =>
-  requestWithFallback('/enterbankdetails/', 'POST', { ...bankData, user: userId }, token)
+  requestWithFallback('/enterbankdetails/', 'POST', {
+    user: userId,
+    bank_name: bankData.bank_name,
+    account_number: bankData.account_number,
+    account_name: bankData.account_name,
+  }, token)
 
 export const getBankDetails = (userId, token) =>
   requestWithFallback(`/getbankdetails/${userId}/`, 'GET', null, token)
 
 export const getTransactions = (userId, token) =>
   requestWithFallback(`/gettransactions/${userId}/`, 'GET', null, token)
+
+export const initiateTransfer = (payload) =>
+  requestWithFallback('/transfers/initiate/', 'POST', payload)
+
+export const validateTransferOtp = (payload) =>
+  requestWithFallback('/transfers/validate-otp/', 'POST', payload)
+
+export const getTransferStatus = (transferId, senderId) =>
+  requestWithFallback(`/transfers/${transferId}/?sender_id=${senderId}`, 'GET')
 
 export const setApiBaseUrl = (url) => {
   const newBase = stripTrailingSlash(url)
@@ -180,5 +194,8 @@ export default {
   enterBankDetails,
   getBankDetails,
   getTransactions,
+  initiateTransfer,
+  validateTransferOtp,
+  getTransferStatus,
   setApiBaseUrl,
 }
