@@ -1,10 +1,15 @@
-function Profile({ profile, onChange, onSave }) {
+function Profile({ profile, onChange, onSave, user, onLogout }) {
   return (
     <section className="page profile-page">
       <header className="glass-card reveal">
         <p className="eyebrow">Profile</p>
         <h1>Bank & Sender Details</h1>
         <p className="muted">Saved locally on this device</p>
+        {user?.username && (
+          <p className="muted profile-account-line">
+            Signed in as <strong>@{user.username}</strong>
+          </p>
+        )}
       </header>
 
       <form
@@ -82,6 +87,14 @@ function Profile({ profile, onChange, onSave }) {
 
         <button type="submit" className="action-btn action-primary save-btn">
           Save Details
+        </button>
+
+        <button
+          type="button"
+          className="action-btn action-secondary logout-btn"
+          onClick={onLogout}
+        >
+          Logout
         </button>
       </form>
     </section>

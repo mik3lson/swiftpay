@@ -1,14 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import './App.css'
 import BottomNav from './components/BottomNav'
 import ToastStack from './components/ToastStack'
 import { useNFC } from './hooks/useNFC'
 import Home from './pages/Home'
+import Login from './pages/Login'
 import Profile from './pages/Profile'
 import RequestPage from './pages/Request'
 import SendMoneyPage from './pages/SendMoney'
+import Signup from './pages/Signup'
 
 function App() {
+  const [authMode, setAuthMode] = useState('login')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      return window.localStorage.getItem('swiftpay_session') === 'active'
+    } catch {
+      return false
+    }
+  })
   const [activeTab, setActiveTab] = useState('home')
   const [toasts, setToasts] = useState([])
   const [requestFlow, setRequestFlow] = useState({
@@ -45,13 +56,38 @@ function App() {
 
   const { supported, error, shareBankDetails, receiveBankDetails } = useNFC()
 
-  const user = useMemo(
-    () => ({
+  const [user, setUser] = useState(() => {
+    try {
+      const savedAuth = window.localStorage.getItem('swiftpay_auth_user')
+      if (savedAuth) {
+        const parsed = JSON.parse(savedAuth)
+        return {
+          id: parsed.id || 'SP-34091',
+          username: parsed.username || 'swiftqueen',
+        }
+      }
+    } catch {
+      // Fallback values are used when local storage is unavailable.
+    }
+
+    return {
       id: 'SP-34091',
       username: 'swiftqueen',
-    }),
-    [],
-  )
+    }
+  })
+
+  const [accountMeta, setAccountMeta] = useState(() => {
+    try {
+      const savedAuth = window.localStorage.getItem('swiftpay_auth_user')
+      if (savedAuth) {
+        return JSON.parse(savedAuth)
+      }
+    } catch {
+      // Empty account metadata is safe when local storage is unavailable.
+    }
+
+    return null
+  })
 
   const pushToast = (message, type = 'info') => {
     const id = `${Date.now()}-${Math.random()}`
@@ -60,6 +96,112 @@ function App() {
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id))
     }, 3200)
+  }
+
+  const persistAuthSession = (nextUser) => {
+    try {
+      window.localStorage.setItem('swiftpay_auth_user', JSON.stringify(nextUser))
+      window.localStorage.setItem('swiftpay_session', 'active')
+    } catch {
+      // Auth can still work for the current tab without persistence.
+    }
+  }
+
+  const handleSignup = (formData) => {
+    const fullName = formData.fullName.trim()
+    const email = formData.email.trim().toLowerCase()
+    const username = formData.username.trim()
+
+    if (formData.password !== formData.confirmPassword) {
+      pushToast('Passwords do not match', 'error')
+      return
+    }
+
+    if (!fullName || !email || !username) {
+      pushToast('Please complete all fields', 'error')
+      return
+    }
+
+    setAuthBusy(true)
+    const nextUser = {
+      id: `SP-${Date.now().toString().slice(-5)}`,
+      username,
+      fullName,
+      email,
+      password: formData.password,
+    }
+
+    persistAuthSession(nextUser)
+    setUser({ id: nextUser.id, username: nextUser.username })
+    setAccountMeta(nextUser)
+    setIsAuthenticated(true)
+    setAuthBusy(false)
+    setActiveTab('home')
+    setProfile((current) => ({
+      ...current,
+      accountName: current.accountName || fullName,
+    }))
+    pushToast('Account created successfully', 'success')
+  }
+
+  const handleLogin = (formData) => {
+    const identifier = formData.identifier.trim().toLowerCase()
+    const password = formData.password
+
+    if (!identifier || !password) {
+      pushToast('Please enter your login details', 'error')
+      return
+    }
+
+    let savedUser = null
+    try {
+      const raw = window.localStorage.getItem('swiftpay_auth_user')
+      if (raw) {
+        savedUser = JSON.parse(raw)
+      }
+    } catch {
+      // Login continues with in-memory defaults.
+    }
+
+    if (!savedUser) {
+      pushToast('No account found. Please sign up first.', 'error')
+      setAuthMode('signup')
+      return
+    }
+
+    const matchesIdentifier =
+      savedUser.username?.toLowerCase() === identifier
+      || savedUser.email?.toLowerCase() === identifier
+
+    if (!matchesIdentifier || savedUser.password !== password) {
+      pushToast('Incorrect username/email or password', 'error')
+      return
+    }
+
+    setAuthBusy(true)
+    persistAuthSession(savedUser)
+    setUser({ id: savedUser.id || 'SP-34091', username: savedUser.username || 'swiftqueen' })
+    setAccountMeta(savedUser)
+    setIsAuthenticated(true)
+    setAuthBusy(false)
+    setActiveTab('home')
+    pushToast('Welcome back', 'success')
+  }
+
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    setAuthMode('login')
+    setActiveTab('home')
+    closeRequestPage()
+    closeSendMoneyPage()
+
+    try {
+      window.localStorage.removeItem('swiftpay_session')
+    } catch {
+      // Session-only logout still works without local storage.
+    }
+
+    pushToast('You have been logged out', 'info')
   }
 
   const formatExpiryDate = (value) => {
@@ -266,12 +408,34 @@ function App() {
   }
 
   const renderPage = () => {
+    if (!isAuthenticated) {
+      if (authMode === 'signup') {
+        return (
+          <Signup
+            onSubmit={handleSignup}
+            onSwitchToLogin={() => setAuthMode('login')}
+            isLoading={authBusy}
+          />
+        )
+      }
+
+      return (
+        <Login
+          onSubmit={handleLogin}
+          onSwitchToSignup={() => setAuthMode('signup')}
+          isLoading={authBusy}
+        />
+      )
+    }
+
     if (activeTab === 'profile') {
       return (
         <Profile
           profile={profile}
           onChange={handleProfileChange}
           onSave={saveProfile}
+          user={accountMeta}
+          onLogout={handleLogout}
         />
       )
     }
@@ -334,7 +498,7 @@ function App() {
   return (
     <div className="app-shell">
       {renderPage()}
-      <BottomNav activeTab={activeTab} onChange={handleNavChange} />
+      {isAuthenticated && <BottomNav activeTab={activeTab} onChange={handleNavChange} />}
       <ToastStack toasts={toasts} />
       {error && <p className="sr-only">{error}</p>}
     </div>

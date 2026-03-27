@@ -585,6 +585,68 @@ input {
   gap: 12px;
 }
 
+.auth-page {
+  align-content: start;
+  min-height: 70svh;
+}
+
+.auth-header {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--ink-500);
+}
+
+.auth-password-row {
+  gap: 10px;
+}
+
+.auth-submit {
+  margin-top: 6px;
+}
+
+.auth-switch-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-500);
+}
+
+.auth-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--violet-200);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.auth-switch-btn:hover {
+  text-decoration: underline;
+}
+
+.profile-account-line {
+  margin-top: 6px;
+}
+
+.profile-account-line strong {
+  color: var(--ink-100);
+}
+
+.logout-btn {
+  margin-top: 4px;
+}
+
 .profile-form label {
   display: grid;
   gap: 8px;
