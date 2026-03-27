@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import BottomNav from './components/BottomNav'
 import ToastStack from './components/ToastStack'
@@ -9,10 +9,20 @@ import Profile from './pages/Profile'
 import RequestPage from './pages/Request'
 import SendMoneyPage from './pages/SendMoney'
 import Signup from './pages/Signup'
+import * as api from './services/api'
 
 function App() {
   const [authMode, setAuthMode] = useState('login')
   const [authBusy, setAuthBusy] = useState(false)
+  const [signupFieldErrors, setSignupFieldErrors] = useState({})
+  const [loginFieldErrors, setLoginFieldErrors] = useState({})
+  const [_authToken, setAuthToken] = useState(() => {
+    try {
+      return window.localStorage.getItem('swiftpay_token') || null
+    } catch {
+      return null
+    }
+  })
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     try {
       return window.localStorage.getItem('swiftpay_session') === 'active'
@@ -22,6 +32,7 @@ function App() {
   })
   const [activeTab, setActiveTab] = useState('home')
   const [toasts, setToasts] = useState([])
+  const [users, setUsers] = useState([])
   const [requestFlow, setRequestFlow] = useState({
     open: false,
     step: 'input',
@@ -45,9 +56,9 @@ function App() {
     }
 
     return {
-      bankName: 'Swift Bank',
-      accountNumber: '0021947362',
-      accountName: 'Adaeze Nwosu',
+      bankName: '',
+      accountNumber: '',
+      accountName: '',
       cardNumber: '',
       expiryDate: '',
       cvv: '',
@@ -98,14 +109,32 @@ function App() {
     }, 3200)
   }
 
-  const persistAuthSession = (nextUser) => {
-    try {
-      window.localStorage.setItem('swiftpay_auth_user', JSON.stringify(nextUser))
-      window.localStorage.setItem('swiftpay_session', 'active')
-    } catch {
-      // Auth can still work for the current tab without persistence.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUsers([])
+      return
     }
-  }
+
+    const token = window.localStorage.getItem('swiftpay_token') || _authToken
+    api
+      .getUsers(token)
+      .then((response) => {
+        if (Array.isArray(response)) {
+          setUsers(response)
+          return
+        }
+
+        if (Array.isArray(response.data)) {
+          setUsers(response.data)
+          return
+        }
+
+        setUsers([])
+      })
+      .catch(() => {
+        setUsers([])
+      })
+  }, [isAuthenticated, _authToken])
 
   const handleSignup = (formData) => {
     const fullName = formData.fullName.trim()
@@ -123,25 +152,61 @@ function App() {
     }
 
     setAuthBusy(true)
-    const nextUser = {
-      id: `SP-${Date.now().toString().slice(-5)}`,
-      username,
-      fullName,
-      email,
-      password: formData.password,
-    }
+    setSignupFieldErrors({})
 
-    persistAuthSession(nextUser)
-    setUser({ id: nextUser.id, username: nextUser.username })
-    setAccountMeta(nextUser)
-    setIsAuthenticated(true)
-    setAuthBusy(false)
-    setActiveTab('home')
-    setProfile((current) => ({
-      ...current,
-      accountName: current.accountName || fullName,
-    }))
-    pushToast('Account created successfully', 'success')
+    api
+      .signup(formData)
+      .then((response) => {
+        const resolvedUserId = String(response.user_id || response.user?.id || `SP-${Date.now().toString().slice(-5)}`)
+        const resolvedUsername = response.username || response.user?.username || username
+        const resolvedFullName = response.name || response.user?.name || fullName
+        const resolvedEmail = response.email || response.user?.email || email
+
+        const nextUser = {
+          id: resolvedUserId,
+          username: resolvedUsername,
+          fullName: resolvedFullName,
+          email: resolvedEmail,
+        }
+
+        const token = response.token || response.access_token
+        if (token) {
+          setAuthToken(token)
+          try {
+            window.localStorage.setItem('swiftpay_token', token)
+          } catch {
+            // Token stored in memory if localStorage unavailable
+          }
+        }
+
+        try {
+          window.localStorage.setItem('swiftpay_auth_user', JSON.stringify(nextUser))
+          window.localStorage.setItem('swiftpay_session', 'active')
+        } catch {
+          // Session created in memory if localStorage unavailable
+        }
+
+        setUser({ id: nextUser.id, username: nextUser.username })
+        setAccountMeta(nextUser)
+        setIsAuthenticated(true)
+        setAuthBusy(false)
+        setSignupFieldErrors({})
+        setActiveTab('home')
+        setProfile((current) => ({
+          ...current,
+          accountName: current.accountName || fullName,
+        }))
+        pushToast('Account created successfully', 'success')
+      })
+      .catch((error) => {
+        setAuthBusy(false)
+        setSignupFieldErrors(error.fieldErrors || {})
+        const fieldErrorMessages = Object.values(error.fieldErrors || {})
+        const generalMessage = fieldErrorMessages.length > 0
+          ? fieldErrorMessages[0]
+          : error.message || 'Signup failed. Please try again.'
+        pushToast(generalMessage, 'error')
+      })
   }
 
   const handleLogin = (formData) => {
@@ -153,43 +218,63 @@ function App() {
       return
     }
 
-    let savedUser = null
-    try {
-      const raw = window.localStorage.getItem('swiftpay_auth_user')
-      if (raw) {
-        savedUser = JSON.parse(raw)
-      }
-    } catch {
-      // Login continues with in-memory defaults.
-    }
-
-    if (!savedUser) {
-      pushToast('No account found. Please sign up first.', 'error')
-      setAuthMode('signup')
-      return
-    }
-
-    const matchesIdentifier =
-      savedUser.username?.toLowerCase() === identifier
-      || savedUser.email?.toLowerCase() === identifier
-
-    if (!matchesIdentifier || savedUser.password !== password) {
-      pushToast('Incorrect username/email or password', 'error')
-      return
-    }
-
     setAuthBusy(true)
-    persistAuthSession(savedUser)
-    setUser({ id: savedUser.id || 'SP-34091', username: savedUser.username || 'swiftqueen' })
-    setAccountMeta(savedUser)
-    setIsAuthenticated(true)
-    setAuthBusy(false)
-    setActiveTab('home')
-    pushToast('Welcome back', 'success')
+    setLoginFieldErrors({})
+
+    api
+      .login({ identifier, password })
+      .then((response) => {
+        const resolvedUserId = String(response.user_id || response.user?.id || 'SP-34091')
+        const resolvedUsername = response.username || response.user?.username || 'swiftqueen'
+        const resolvedFullName = response.name || response.user?.name || ''
+        const resolvedEmail = response.email || response.user?.email || ''
+
+        const nextUser = {
+          id: resolvedUserId,
+          username: resolvedUsername,
+          fullName: resolvedFullName,
+          email: resolvedEmail,
+        }
+
+        const token = response.token || response.access_token
+        if (token) {
+          setAuthToken(token)
+          try {
+            window.localStorage.setItem('swiftpay_token', token)
+          } catch {
+            // Token stored in memory if localStorage unavailable
+          }
+        }
+
+        try {
+          window.localStorage.setItem('swiftpay_auth_user', JSON.stringify(nextUser))
+          window.localStorage.setItem('swiftpay_session', 'active')
+        } catch {
+          // Session created in memory if localStorage unavailable
+        }
+
+        setUser({ id: nextUser.id, username: nextUser.username })
+        setAccountMeta(nextUser)
+        setIsAuthenticated(true)
+        setAuthBusy(false)
+        setLoginFieldErrors({})
+        setActiveTab('home')
+        pushToast('Welcome back', 'success')
+      })
+      .catch((error) => {
+        setAuthBusy(false)
+        setLoginFieldErrors(error.fieldErrors || {})
+        const fieldErrorMessages = Object.values(error.fieldErrors || {})
+        const generalMessage = fieldErrorMessages.length > 0
+          ? fieldErrorMessages[0]
+          : error.message || 'Login failed. Please try again.'
+        pushToast(generalMessage, 'error')
+      })
   }
 
   const handleLogout = () => {
     setIsAuthenticated(false)
+    setAuthToken(null)
     setAuthMode('login')
     setActiveTab('home')
     closeRequestPage()
@@ -197,6 +282,8 @@ function App() {
 
     try {
       window.localStorage.removeItem('swiftpay_session')
+      window.localStorage.removeItem('swiftpay_token')
+      window.localStorage.removeItem('swiftpay_auth_user')
     } catch {
       // Session-only logout still works without local storage.
     }
@@ -220,9 +307,16 @@ function App() {
     setProfile((current) => ({ ...current, [name]: nextValue }))
   }
 
+  const hydrateProfile = (nextProfile) => {
+    setProfile((current) => ({
+      ...current,
+      ...nextProfile,
+    }))
+  }
+
   const saveProfile = () => {
     window.localStorage.setItem('swiftpay_profile', JSON.stringify(profile))
-    pushToast('Details saved locally', 'success')
+    pushToast('Details saved', 'success')
   }
 
   const openRequestPage = () => {
@@ -415,6 +509,7 @@ function App() {
             onSubmit={handleSignup}
             onSwitchToLogin={() => setAuthMode('login')}
             isLoading={authBusy}
+            fieldErrors={signupFieldErrors}
           />
         )
       }
@@ -424,6 +519,7 @@ function App() {
           onSubmit={handleLogin}
           onSwitchToSignup={() => setAuthMode('signup')}
           isLoading={authBusy}
+          fieldErrors={loginFieldErrors}
         />
       )
     }
@@ -434,6 +530,7 @@ function App() {
           profile={profile}
           onChange={handleProfileChange}
           onSave={saveProfile}
+          onHydrateProfile={hydrateProfile}
           user={accountMeta}
           onLogout={handleLogout}
         />
@@ -444,11 +541,26 @@ function App() {
       return (
         <section className="page placeholder-page">
           <div className="glass-card reveal">
-            <p className="eyebrow">Coming soon</p>
-            <h1>{activeTab === 'search' ? 'Search' : 'Cards'}</h1>
-            <p className="muted">
-              This section is reserved for future Swift Pay features.
-            </p>
+            {activeTab === 'search' && (
+              <>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>💳</div>
+                <p className="eyebrow">Coming soon</p>
+                <h1>Swift Monie</h1>
+                <p className="muted">
+                  Flexible payment plans and installments are coming soon.
+                </p>
+              </>
+            )}
+            {activeTab === 'cards' && (
+              <>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🛍️</div>
+                <p className="eyebrow">Coming soon</p>
+                <h1>NFC Instant Pay Cards</h1>
+                <p className="muted">
+                  Tap-enabled payment cards for seamless shopping experiences. Coming soon.
+                </p>
+              </>
+            )}
           </div>
         </section>
       )
@@ -489,8 +601,10 @@ function App() {
     return (
       <Home
         user={user}
+        usersCount={users.length}
         onOpenRequest={openRequestPage}
         onOpenSendMoney={openSendMoneyPage}
+        onNavigateToProfile={() => setActiveTab('profile')}
       />
     )
   }

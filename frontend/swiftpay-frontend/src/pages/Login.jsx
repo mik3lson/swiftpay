@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-function Login({ onSubmit, onSwitchToSignup, isLoading = false }) {
+function Login({ onSubmit, onSwitchToSignup, isLoading = false, fieldErrors = {} }) {
   const [formData, setFormData] = useState({
     identifier: '',
     password: '',
@@ -37,6 +37,7 @@ function Login({ onSubmit, onSwitchToSignup, isLoading = false }) {
             required
           />
         </label>
+        {fieldErrors.identifier && <p className="field-error">{fieldErrors.identifier}</p>}
 
         <label>
           Password
@@ -50,6 +51,8 @@ function Login({ onSubmit, onSwitchToSignup, isLoading = false }) {
             required
           />
         </label>
+        {fieldErrors.password && <p className="field-error">{fieldErrors.password}</p>}
+        {fieldErrors.non_field_errors && <p className="field-error">{fieldErrors.non_field_errors}</p>}
 
         <button type="submit" className="action-btn action-primary auth-submit" disabled={isLoading}>
           {isLoading ? 'Signing in...' : 'Login'}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-function Signup({ onSubmit, onSwitchToLogin, isLoading = false }) {
+function Signup({ onSubmit, onSwitchToLogin, isLoading = false, fieldErrors = {} }) {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -39,6 +39,7 @@ function Signup({ onSubmit, onSwitchToLogin, isLoading = false }) {
             autoComplete="name"
             required
           />
+          {fieldErrors.name && <p className="field-error">{fieldErrors.name}</p>}
         </label>
 
         <label>
@@ -52,6 +53,7 @@ function Signup({ onSubmit, onSwitchToLogin, isLoading = false }) {
             autoComplete="email"
             required
           />
+          {fieldErrors.email && <p className="field-error">{fieldErrors.email}</p>}
         </label>
 
         <label>
@@ -65,6 +67,7 @@ function Signup({ onSubmit, onSwitchToLogin, isLoading = false }) {
             autoComplete="username"
             required
           />
+          {fieldErrors.username && <p className="field-error">{fieldErrors.username}</p>}
         </label>
 
         <div className="split-row auth-password-row">

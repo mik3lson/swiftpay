@@ -671,6 +671,13 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(178, 128, 255, 0.2);
 }
 
+.field-error {
+  color: var(--error);
+  font-size: 12px;
+  margin: -8px 0 0 0;
+  padding-top: 4px;
+}
+
 .split-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

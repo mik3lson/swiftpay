@@ -1,6 +1,6 @@
 const navItems = [
   { id: 'home', label: 'Home', icon: '⌂' },
-  { id: 'search', label: 'Search', icon: '⌕' },
+  { id: 'search', label: 'Wallet', icon: '💳' },
   { id: 'cards', label: 'Cards', icon: '◫' },
   { id: 'profile', label: 'Profile', icon: '◎' },
 ]
