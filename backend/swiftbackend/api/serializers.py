@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from base.models import Users, BankAccounts, Transactions
+from base.models import Transfer, Users, BankAccounts, Transactions
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -72,3 +72,41 @@ class TransactionSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+class InitiateTransferSerializer(serializers.Serializer):
+    sender_id = serializers.IntegerField()
+
+    # ── Sender card details (never persisted) ──
+    card_pan         = serializers.CharField(min_length=13, max_length=19)
+    card_pin         = serializers.CharField(min_length=4,  max_length=4)
+    card_expiry      = serializers.CharField(
+        min_length=4, max_length=4,
+        help_text="YYMM format, e.g. 2612"
+    )
+    card_cvv2        = serializers.CharField(min_length=3, max_length=4)
+
+    # ── Receiver account details ──
+    receiver_id             = serializers.IntegerField()
+    receiver_account_number = serializers.CharField(max_length=20)
+    receiver_bank_code      = serializers.CharField(max_length=10)
+    receiver_account_name   = serializers.CharField(max_length=120)
+
+    # ── Transfer details ──
+    amount_kobo = serializers.IntegerField(min_value=100)    # min ₦1
+    currency    = serializers.CharField(default="NGN", max_length=3)
+
+
+class OTPValidationSerializer(serializers.Serializer):
+    sender_id   = serializers.IntegerField()
+    transfer_id = serializers.IntegerField()
+    otp         = serializers.CharField(min_length=4, max_length=8)
+
+
+class TransferStatusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Transfer 
+        fields = [
+            "id", "transaction_ref", "amount_kobo", "currency",
+            "status", "receiver_account_number", "receiver_bank_code",
+            "receiver_account_name", "created_at",
+        ]
